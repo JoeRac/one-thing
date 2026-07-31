@@ -28,7 +28,7 @@
     -moz-osx-font-smoothing: grayscale;
     transition: background-color .45s ease, color .45s ease;
   }
-  body.idle{ cursor:none; }
+  body.idle:not(.panel-open){ cursor:none; }
 
   /* ---------- ambient depth ---------- */
   #vignette{
@@ -157,7 +157,7 @@
     transition: opacity .5s ease, transform .5s cubic-bezier(.2,.8,.2,1),
                 background-color .45s ease, border-color .45s ease, color .45s ease;
   }
-  body.idle #hud,
+  body.idle:not(.panel-open) #hud,
   body.flashing #hud{ opacity:0; transform:translateX(-50%) translateY(14px); pointer-events:none; }
   body.flashing #rail,
   body.flashing #toast,
@@ -218,6 +218,40 @@
   }
 
   #next{ font-variant-numeric: tabular-nums; color:var(--hud-strong); font-weight:600; }
+
+  /* ---------- sync panel ---------- */
+  /* Lives inside the HUD as its own full-width row, so it can never collide
+     with the bar no matter how many rows the controls wrap onto. */
+  #syncPanel{
+    display:none;
+    flex-basis:100%;
+    align-items:center; gap:10px; flex-wrap:wrap;
+    justify-content:center;
+    padding-top:13px;
+    border-top:1px solid var(--hud-line);
+  }
+  body.panel-open #syncPanel{ display:flex; }
+
+  #syncInput{
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size:11px; letter-spacing:0;
+    width:290px; padding:9px 12px;
+    color:var(--hud-strong);
+    background:var(--hud-hover);
+    border:1px solid var(--hud-line);
+    border-radius:999px; outline:none;
+  }
+  #syncInput:focus{ border-color:var(--accent); }
+  #syncInput::placeholder{ color:var(--hud-ink); letter-spacing:.06em; }
+
+  #syncMsg{
+    flex-basis:100%; text-align:center;
+    font-family:var(--ui-font);
+    font-size:10px; letter-spacing:.13em; text-transform:uppercase;
+    color:var(--hud-ink);
+    min-height:12px;
+  }
+  #syncMsg.bad{ color:#E0563A; }
 
   /* ---------- toast ---------- */
   #toast{
@@ -286,7 +320,17 @@
 
   <button class="btn" id="testBtn">Flash</button>
   <button class="btn" id="soundBtn">Sound</button>
+  <button class="btn" id="syncBtn">Sync</button>
   <button class="btn" id="fsBtn">Full screen</button>
+
+  <div id="syncPanel">
+    <input id="syncInput" type="text" placeholder="Paste sync code" spellcheck="false"
+           autocomplete="off" autocapitalize="off" autocorrect="off">
+    <button class="btn" id="syncConnect">Connect</button>
+    <button class="btn" id="syncCopy">Copy code</button>
+    <button class="btn" id="syncOff">Disconnect</button>
+    <div id="syncMsg"></div>
+  </div>
 </div>
 
 <script>
@@ -430,12 +474,13 @@
   }
   function save(){
     mem = {
-      text:     one.innerText,
-      size:     state.size,
-      everyIdx: state.everyIdx,
-      theme:    state.theme,
-      sound:    state.sound,
-      nextAt:   state.nextAt
+      text:      one.innerText,
+      size:      state.size,
+      everyIdx:  state.everyIdx,
+      theme:     state.theme,
+      sound:     state.sound,
+      nextAt:    state.nextAt,
+      updatedAt: state.updatedAt
     };
     if(!storageOK) return;
     try{ localStorage.setItem(KEY, JSON.stringify(mem)); }
@@ -478,7 +523,9 @@
     everyIdx: typeof saved.everyIdx === "number" ? saved.everyIdx : STEPS.indexOf(15),
     theme:    typeof saved.theme === "number" ? saved.theme : 0,
     sound:    saved.sound === true,
-    nextAt:   typeof saved.nextAt === "number" ? saved.nextAt : 0
+    nextAt:   typeof saved.nextAt === "number" ? saved.nextAt : 0,
+    // When the text last changed here. Drives last-write-wins across machines.
+    updatedAt: typeof saved.updatedAt === "number" ? saved.updatedAt : 0
   };
 
   // Clamp anything that came back malformed.
@@ -510,13 +557,19 @@
   }
 
   var toastTimer = null;
-  function flashToast(){
+  function flashToast(label){
+    toast.textContent = label || "Saved";
     toast.classList.add("show");
     clearTimeout(toastTimer);
     toastTimer = setTimeout(function(){ toast.classList.remove("show"); }, 900);
   }
 
-  one.addEventListener("input", function(){ syncEmpty(); queueSave(); });
+  one.addEventListener("input", function(){
+    state.updatedAt = Date.now();
+    syncEmpty();
+    queueSave();
+    pushSoon();
+  });
 
   // Strip formatting from pasted text (only needed on the "true" fallback path).
   one.addEventListener("paste", function(e){
@@ -622,6 +675,201 @@
     state.sound = !state.sound;
     applySound(); save();
     if(state.sound) chime();     // unlock the context on the same gesture
+  });
+
+  /* ============================ sync ============================ */
+  /* Optional, and entirely credential-free in this file: a sync code is an
+     opaque blob carrying {u: project url, k: publishable key, id: note id}.
+     Nothing is stored here until you paste one in, so the published page ships
+     no secrets and anyone can point it at their own backend. Only the TEXT
+     syncs — size, style and interval stay per-machine, since the screens
+     differ. Conflicts resolve last-write-wins on the server. */
+  var SYNC_KEY = "onething.sync.v1";
+  var sync = null;              // {u,k,id} once connected
+  var syncStatus = "off";       // off | busy | ok | error
+  var pullTimer = null;
+  var pushTimer = null;
+  var pendingRemote = null;     // a newer remote note held back while typing
+
+  var syncBtn     = document.getElementById("syncBtn");
+  var syncPanel   = document.getElementById("syncPanel");
+  var syncInput   = document.getElementById("syncInput");
+  var syncMsg     = document.getElementById("syncMsg");
+
+  function b64urlEncode(str){
+    var bytes = new TextEncoder().encode(str), bin = "";
+    for(var i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+    return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  }
+  function b64urlDecode(s){
+    s = s.replace(/-/g, "+").replace(/_/g, "/");
+    while(s.length % 4) s += "=";
+    var bin = atob(s), bytes = new Uint8Array(bin.length);
+    for(var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return new TextDecoder().decode(bytes);
+  }
+
+  function setStatus(s){
+    syncStatus = s;
+    syncBtn.classList.toggle("on", s === "ok");
+    syncBtn.textContent =
+      s === "ok"    ? "Synced"  :
+      s === "busy"  ? "Syncing" :
+      s === "error" ? "Offline" : "Sync";
+  }
+
+  function rpc(fn, body){
+    return fetch(sync.u.replace(/\/+$/, "") + "/rest/v1/rpc/" + fn, {
+      method: "POST",
+      headers: { "apikey": sync.k, "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    }).then(function(r){
+      if(!r.ok) return r.text().then(function(t){ throw new Error(t); });
+      return r.json();
+    });
+  }
+
+  // Take the remote copy when it is genuinely newer — but never yank text out
+  // from under a caret; hold it until the box is no longer focused.
+  function adopt(row, force){
+    var t = Date.parse(row.updated_at);
+    if(!force && !(t > state.updatedAt)) return;
+    if(row.body === one.innerText){ state.updatedAt = Math.max(state.updatedAt, t); save(); return; }
+    if(document.activeElement === one){ pendingRemote = row; return; }
+    one.textContent = row.body;
+    state.updatedAt = t;
+    syncEmpty();
+    save();
+    flashToast("Synced");
+  }
+
+  // Deferred to a task: inside the blur event Chrome still reports #one as
+  // document.activeElement, so adopting here would just re-defer itself and the
+  // held update would never land.
+  one.addEventListener("blur", function(){
+    setTimeout(function(){
+      if(!pendingRemote) return;
+      var r = pendingRemote;
+      pendingRemote = null;
+      adopt(r);
+    }, 0);
+  });
+
+  function pull(){
+    if(!sync) return Promise.resolve();
+    return rpc("one_thing_get", { p_id: sync.id }).then(function(rows){
+      if(rows && rows[0]) adopt(rows[0]);
+      setStatus("ok");
+    }).catch(function(){ setStatus("error"); });
+  }
+
+  function push(){
+    if(!sync) return Promise.resolve();
+    setStatus("busy");
+    return rpc("one_thing_put", {
+      p_id: sync.id,
+      p_body: one.innerText,
+      p_updated_at: new Date(state.updatedAt || Date.now()).toISOString()
+    }).then(function(rows){
+      // The server hands back whichever copy won, so a rejected stale write
+      // still converges instead of silently diverging.
+      if(rows && rows[0]) adopt(rows[0]);
+      setStatus("ok");
+    }).catch(function(){ setStatus("error"); });
+  }
+
+  function pushSoon(){
+    if(!sync) return;
+    clearTimeout(pushTimer);
+    pushTimer = setTimeout(push, 1200);
+  }
+
+  function startSync(){
+    clearInterval(pullTimer);
+    if(!sync){ setStatus("off"); return; }
+    setStatus("busy");
+    pullTimer = setInterval(pull, 10000);
+  }
+
+  function connect(code){
+    var cfg;
+    try{ cfg = JSON.parse(b64urlDecode(code.trim())); }
+    catch(e){ return "That code isn't readable"; }
+    if(!cfg || !cfg.u || !cfg.k || !cfg.id) return "That code is missing fields";
+    if(!/^https:\/\//.test(cfg.u)) return "That code has a bad url";
+
+    sync = cfg;
+    try{ localStorage.setItem(SYNC_KEY, JSON.stringify(cfg)); }catch(e){}
+    startSync();
+
+    // Joining a shared note: take what is already there rather than racing it.
+    // Only if the note is empty do we seed it from this machine.
+    rpc("one_thing_get", { p_id: sync.id }).then(function(rows){
+      if(rows && rows[0] && rows[0].body !== ""){
+        adopt(rows[0], true);
+        syncMsg.textContent = "Connected — pulled the shared note";
+      }else{
+        state.updatedAt = state.updatedAt || Date.now();
+        return push().then(function(){
+          syncMsg.textContent = "Connected — this note is now the shared one";
+        });
+      }
+      setStatus("ok");
+    }).catch(function(){
+      setStatus("error");
+      syncMsg.textContent = "Connected, but can't reach the server";
+      syncMsg.classList.add("bad");
+    });
+    return null;
+  }
+
+  syncBtn.addEventListener("click", function(){
+    var open = document.body.classList.toggle("panel-open");
+    syncMsg.classList.remove("bad");
+    if(open){
+      syncMsg.textContent = sync ? "Connected" : "Paste the same code on every machine";
+      syncInput.value = "";
+      syncInput.focus();
+    }
+  });
+
+  document.getElementById("syncConnect").addEventListener("click", function(){
+    var code = syncInput.value;
+    if(!code.trim()){ syncMsg.textContent = "Paste a code first"; syncMsg.classList.add("bad"); return; }
+    syncMsg.classList.remove("bad");
+    var err = connect(code);
+    if(err){ syncMsg.textContent = err; syncMsg.classList.add("bad"); }
+    else{ syncInput.value = ""; }
+  });
+
+  document.getElementById("syncCopy").addEventListener("click", function(){
+    if(!sync){ syncMsg.textContent = "Nothing to copy — connect first"; syncMsg.classList.add("bad"); return; }
+    syncMsg.classList.remove("bad");
+    var code = b64urlEncode(JSON.stringify(sync));
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(code).then(function(){
+        syncMsg.textContent = "Code copied — paste it on your other Mac";
+      }).catch(function(){ syncInput.value = code; syncMsg.textContent = "Copy it from the box"; });
+    }else{
+      syncInput.value = code;
+      syncInput.select();
+      syncMsg.textContent = "Copy it from the box";
+    }
+  });
+
+  document.getElementById("syncOff").addEventListener("click", function(){
+    sync = null;
+    pendingRemote = null;
+    clearInterval(pullTimer);
+    clearTimeout(pushTimer);
+    try{ localStorage.removeItem(SYNC_KEY); }catch(e){}
+    setStatus("off");
+    syncMsg.classList.remove("bad");
+    syncMsg.textContent = "Disconnected — this Mac keeps its own copy";
+  });
+
+  syncInput.addEventListener("keydown", function(e){
+    if(e.key === "Enter") document.getElementById("syncConnect").click();
   });
 
   /* ============================ the flash ============================ */
@@ -745,7 +993,7 @@
 
   // Displays sleep and background tabs throttle — resync on wake.
   document.addEventListener("visibilitychange", function(){
-    if(!document.hidden) tick();
+    if(!document.hidden){ tick(); pull(); }
   });
 
   /* ============================ chrome ============================ */
@@ -793,6 +1041,13 @@
   applySound();
   syncEmpty();
   render();
+
+  try{
+    var rawSync = localStorage.getItem(SYNC_KEY);
+    if(rawSync) sync = JSON.parse(rawSync);
+  }catch(e){ sync = null; }
+  startSync();
+  if(sync) pull();
 
   if(!saved.text){
     one.focus();               // nothing written yet — let them just start typing
