@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>ONE THING</title>
+<style>
+  :root{
+    --accent: #F0B429;
+    --accent-soft: rgba(240,180,41,.55);
+    --wash-hi: #FFE9A8;
+    --wash-lo: #7A5209;
+    --size: 110px;
+    --bg: #070809;
+    --ink: #F2F2F0;
+    --hud-bg: rgba(255,255,255,.045);
+    --hud-line: rgba(255,255,255,.10);
+    --hud-ink: rgba(255,255,255,.62);
+    --font: -apple-system, BlinkMacSystemFont, "Helvetica Neue", "Inter",
+            "Segoe UI", Roboto, Arial, sans-serif;
+  }
+
+  *{ box-sizing:border-box; margin:0; padding:0; }
+
+  html,body{ height:100%; }
+
+  body{
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font);
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    transition: cursor .2s;
+  }
+  body.idle{ cursor:none; }
+
+  /* ---------- ambient depth ---------- */
+  #vignette{
+    position:fixed; inset:0; pointer-events:none; z-index:1;
+    background:
+      radial-gradient(120% 90% at 50% 0%, rgba(255,255,255,.055) 0%, transparent 55%),
+      radial-gradient(100% 100% at 50% 50%, transparent 40%, rgba(0,0,0,.65) 100%);
+  }
+  #grain{
+    position:fixed; inset:-50%; pointer-events:none; z-index:3;
+    opacity:.030; mix-blend-mode:overlay;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/></filter><rect width='200' height='200' filter='url(%23n)'/></svg>");
+  }
+
+  /* ---------- the one thing ---------- */
+  #stage{
+    position:relative; z-index:4;
+    height:100%;
+    padding: 6.5vh 6vw 15vh;
+    overflow-y:auto;
+    scrollbar-width:none;
+    will-change: transform, filter;
+  }
+  #stage::-webkit-scrollbar{ display:none; }
+
+  #one{
+    font-size: var(--size);
+    line-height: 1.02;
+    font-weight: 600;
+    letter-spacing: -.005em;
+    text-transform: uppercase;
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+    outline: none;
+    color: var(--ink);
+    caret-color: var(--accent);
+    text-wrap: balance;
+    transition: font-size .12s cubic-bezier(.2,.8,.2,1);
+  }
+  #one::selection{ background: var(--accent); color:#000; }
+
+  #one.is-empty::before{
+    content: attr(data-placeholder);
+    color: rgba(255,255,255,.14);
+    pointer-events:none;
+  }
+
+  /* ---------- flash layers ----------
+     The bloom sits BEHIND the type (z-2) so the words stay the brightest
+     thing on screen; the sheen and frame ride above it (z-20).           */
+  #flashBack { position:fixed; inset:0; z-index:2;  pointer-events:none; }
+  #flashFront{ position:fixed; inset:0; z-index:20; pointer-events:none; }
+
+  #bloom{
+    position:absolute; inset:0; opacity:0;
+    background:
+      radial-gradient(135% 105% at 50% 30%,
+        var(--wash-hi) 0%,
+        var(--accent)  36%,
+        var(--wash-lo) 84%,
+        #150E02      100%);
+  }
+  #snap{
+    position:absolute; inset:0; opacity:0;
+    background:#fff; mix-blend-mode: screen;
+  }
+  #sheen{
+    position:absolute; top:-25%; left:0; width:100%; height:150%; opacity:0;
+    background: linear-gradient(100deg,
+      rgba(255,255,255,0) 38%,
+      rgba(255,255,255,.75) 50%,
+      rgba(255,255,255,0) 62%);
+    mix-blend-mode: overlay;
+    filter: blur(2px);
+  }
+  #frame{
+    position:absolute; inset:0; opacity:0;
+    border: 1px solid rgba(255,255,255,.65);
+    box-shadow:
+      inset 0 0 0 2px rgba(255,255,255,.16),
+      inset 0 0 120px 12px rgba(0,0,0,.30);
+  }
+
+  /* ---------- progress rail ---------- */
+  #rail{
+    position:fixed; left:0; bottom:0; height:2px; width:100%;
+    z-index:15; pointer-events:none;
+    background: rgba(255,255,255,.05);
+  }
+  #railFill{
+    height:100%; width:0%;
+    background: linear-gradient(90deg, rgba(255,255,255,.08), var(--accent));
+    box-shadow: 0 0 12px var(--accent-soft);
+    transition: width 1s linear;
+  }
+
+  /* ---------- HUD ---------- */
+  #hud{
+    position:fixed; z-index:30;
+    left:50%; bottom:26px; transform:translateX(-50%);
+    display:flex; align-items:center; gap:22px; flex-wrap:wrap;
+    justify-content:center;
+    max-width: calc(100vw - 32px);
+    padding: 13px 20px;
+    border-radius: 20px;
+    background: var(--hud-bg);
+    border: 1px solid var(--hud-line);
+    box-shadow: 0 24px 60px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.07);
+    -webkit-backdrop-filter: blur(24px) saturate(160%);
+    backdrop-filter: blur(24px) saturate(160%);
+    color: var(--hud-ink);
+    font-size: 10.5px;
+    letter-spacing: .13em;
+    text-transform: uppercase;
+    transition: opacity .5s ease, transform .5s cubic-bezier(.2,.8,.2,1);
+  }
+  body.idle #hud,
+  body.flashing #hud{ opacity:0; transform:translateX(-50%) translateY(14px); pointer-events:none; }
+  body.flashing #rail,
+  body.flashing #toast,
+  body.flashing #warn{ opacity:0; transition:opacity .25s ease; }
+
+  .grp{ display:flex; flex-direction:column; gap:7px; }
+  .grp .lbl{ display:flex; justify-content:space-between; gap:14px; }
+  .grp .lbl b{ color:#fff; font-weight:600; letter-spacing:.10em; }
+  .sep{ width:1px; align-self:stretch; background:var(--hud-line); }
+
+  input[type=range]{
+    -webkit-appearance:none; appearance:none;
+    width:170px; height:3px; border-radius:3px;
+    background: rgba(255,255,255,.14);
+    outline:none; cursor:pointer;
+  }
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none; appearance:none;
+    width:13px; height:13px; border-radius:50%;
+    background:#fff;
+    box-shadow: 0 0 0 1px rgba(0,0,0,.35), 0 0 14px var(--accent-soft);
+    transition: transform .15s ease;
+  }
+  input[type=range]::-webkit-slider-thumb:hover{ transform:scale(1.22); }
+  input[type=range]::-moz-range-thumb{
+    width:13px; height:13px; border:0; border-radius:50%; background:#fff;
+    box-shadow: 0 0 14px var(--accent-soft);
+  }
+
+  .btn{
+    font:inherit; letter-spacing:.13em; text-transform:uppercase;
+    color:var(--hud-ink); background:transparent;
+    border:1px solid var(--hud-line); border-radius:999px;
+    padding:8px 14px; cursor:pointer;
+    transition: all .18s ease;
+    white-space:nowrap;
+  }
+  .btn:hover{ color:#fff; border-color:rgba(255,255,255,.28); background:rgba(255,255,255,.05); }
+  .btn.on{ color:#000; background:var(--accent); border-color:var(--accent); }
+
+  .dots{ display:flex; gap:8px; }
+  .dot{
+    width:13px; height:13px; border-radius:50%; cursor:pointer;
+    border:1px solid rgba(255,255,255,.18);
+    transition: transform .18s cubic-bezier(.2,.8,.2,1), box-shadow .18s ease;
+  }
+  .dot:hover{ transform:scale(1.2); }
+  .dot.sel{ box-shadow: 0 0 0 2px var(--bg), 0 0 0 3px currentColor; transform:scale(1.12); }
+
+  #next{ font-variant-numeric: tabular-nums; color:#fff; font-weight:600; }
+
+  /* ---------- toast ---------- */
+  #toast{
+    position:fixed; z-index:31; right:22px; top:20px;
+    font-size:10px; letter-spacing:.16em; text-transform:uppercase;
+    color: rgba(255,255,255,.42);
+    opacity:0; transition: opacity .35s ease;
+    pointer-events:none;
+  }
+  #toast.show{ opacity:1; }
+  #warn{
+    position:fixed; z-index:31; left:22px; top:20px;
+    font-size:10px; letter-spacing:.13em; text-transform:uppercase;
+    color:#ff9b6a; display:none;
+  }
+</style>
+</head>
+<body>
+
+<div id="vignette"></div>
+
+<div id="flashBack" aria-hidden="true">
+  <div id="bloom"></div>
+</div>
+
+<div id="grain"></div>
+
+<main id="stage">
+  <div id="one" data-placeholder="Type the one thing"></div>
+</main>
+
+<div id="flashFront" aria-hidden="true">
+  <div id="sheen"></div>
+  <div id="snap"></div>
+  <div id="frame"></div>
+</div>
+
+<div id="rail"><div id="railFill"></div></div>
+
+<div id="toast">Saved</div>
+<div id="warn">Storage blocked &mdash; open in Chrome to autosave</div>
+
+<div id="hud">
+  <div class="grp">
+    <div class="lbl"><span>Size</span><b id="sizeVal">110</b></div>
+    <input type="range" id="sizeSlider" min="28" max="380" step="2" value="110">
+  </div>
+
+  <div class="sep"></div>
+
+  <div class="grp">
+    <div class="lbl"><span>Flash every</span><b id="everyVal">15 min</b></div>
+    <input type="range" id="everySlider" min="0" max="0" step="1" value="0">
+  </div>
+
+  <div class="sep"></div>
+
+  <div class="grp">
+    <div class="lbl"><span>Next</span><b id="next">--:--</b></div>
+    <div class="dots" id="dots"></div>
+  </div>
+
+  <div class="sep"></div>
+
+  <button class="btn" id="testBtn">Flash now</button>
+  <button class="btn" id="soundBtn">Sound</button>
+  <button class="btn" id="fsBtn">Full screen</button>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ============================ storage ============================ */
+  var KEY = "onething.v1";
+  var storageOK = true;
+  var mem = {};
+
+  function load(){
+    try{
+      var raw = localStorage.getItem(KEY);
+      return raw ? JSON.parse(raw) : {};
+    }catch(e){
+      storageOK = false;
+      document.getElementById("warn").style.display = "block";
+      return mem;
+    }
+  }
+  function save(){
+    mem = {
+      text:     readText(),
+      size:     state.size,
+      everyIdx: state.everyIdx,
+      accent:   state.accent,
+      sound:    state.sound,
+      nextAt:   state.nextAt
+    };
+    if(!storageOK) return;
+    try{ localStorage.setItem(KEY, JSON.stringify(mem)); }
+    catch(e){
+      storageOK = false;
+      document.getElementById("warn").style.display = "block";
+    }
+  }
+
+  /* ============================ options ============================ */
+  // Non-linear scale: fine control under an hour, coarse up to 12 hours.
+  var STEPS = [1,2,3,4,5,6,7,8,9,10,12,15,20,25,30,35,40,45,50,55,60,
+               75,90,105,120,150,180,210,240,300,360,420,480,540,600,660,720];
+
+  var ACCENTS = [
+    { name:"Gold",    hex:"#F0B429", soft:"rgba(240,180,41,.55)", hi:"#FFEDB8", lo:"#7A5209" },
+    { name:"Ice",     hex:"#5AC8FA", soft:"rgba(90,200,250,.55)", hi:"#D8F3FF", lo:"#0B4F70" },
+    { name:"Ember",   hex:"#FF4D6D", soft:"rgba(255,77,109,.55)", hi:"#FFD5DD", lo:"#7A1027" },
+    { name:"Verdant", hex:"#3DDC97", soft:"rgba(61,220,151,.55)", hi:"#CFFBE6", lo:"#0C5B3B" }
+  ];
+
+  /* ============================ elements ============================ */
+  var one        = document.getElementById("one");
+  var stage      = document.getElementById("stage");
+  var bloom      = document.getElementById("bloom");
+  var sheen      = document.getElementById("sheen");
+  var snap       = document.getElementById("snap");
+  var frame      = document.getElementById("frame");
+  var railFill   = document.getElementById("railFill");
+  var sizeSlider = document.getElementById("sizeSlider");
+  var everySlider= document.getElementById("everySlider");
+  var sizeVal    = document.getElementById("sizeVal");
+  var everyVal   = document.getElementById("everyVal");
+  var nextEl     = document.getElementById("next");
+  var dotsEl     = document.getElementById("dots");
+  var toast      = document.getElementById("toast");
+  var testBtn    = document.getElementById("testBtn");
+  var soundBtn   = document.getElementById("soundBtn");
+  var fsBtn      = document.getElementById("fsBtn");
+
+  /* ============================ state ============================ */
+  var saved = load();
+
+  var state = {
+    size:     typeof saved.size === "number" ? saved.size : 110,
+    everyIdx: typeof saved.everyIdx === "number" ? saved.everyIdx : STEPS.indexOf(15),
+    accent:   typeof saved.accent === "number" ? saved.accent : 0,
+    sound:    saved.sound === true,
+    nextAt:   typeof saved.nextAt === "number" ? saved.nextAt : 0
+  };
+
+  // Clamp anything that came back malformed.
+  state.size     = Math.min(380, Math.max(28, state.size));
+  state.everyIdx = Math.min(STEPS.length - 1, Math.max(0, state.everyIdx));
+  state.accent   = Math.min(ACCENTS.length - 1, Math.max(0, state.accent));
+
+  function intervalMs(){ return STEPS[state.everyIdx] * 60000; }
+
+  /* ============================ text ============================ */
+  // plaintext-only keeps Enter from injecting markup; fall back where unsupported.
+  one.setAttribute("contenteditable", "plaintext-only");
+  if(one.contentEditable !== "plaintext-only"){
+    one.setAttribute("contenteditable", "true");
+  }
+  one.textContent = typeof saved.text === "string" ? saved.text : "";
+
+  // What we persist. innerText is the only read that preserves the line
+  // breaks contenteditable inserts as <div>s — but it also returns the
+  // CSS-uppercased text, so the transform comes off for the read. This all
+  // happens inside one task, so nothing is ever painted mid-swap.
+  function readText(){
+    var prev = one.style.textTransform;
+    one.style.textTransform = "none";
+    var txt = one.innerText;
+    one.style.textTransform = prev;
+    return txt;
+  }
+
+  function syncEmpty(){
+    one.classList.toggle("is-empty", one.innerText.trim() === "");
+  }
+
+  var saveTimer = null;
+  function queueSave(){
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(function(){
+      save();
+      if(storageOK) flashToast();
+    }, 400);
+  }
+
+  var toastTimer = null;
+  function flashToast(){
+    toast.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function(){ toast.classList.remove("show"); }, 900);
+  }
+
+  one.addEventListener("input", function(){ syncEmpty(); queueSave(); });
+
+  // Strip formatting from pasted text (only needed on the "true" fallback path).
+  one.addEventListener("paste", function(e){
+    if(one.contentEditable === "plaintext-only") return;
+    e.preventDefault();
+    var txt = (e.clipboardData || window.clipboardData).getData("text/plain");
+    document.execCommand("insertText", false, txt);
+  });
+
+  // Clicking anywhere in the empty space below the text drops the caret in.
+  stage.addEventListener("mousedown", function(e){
+    if(e.target === stage){
+      e.preventDefault();
+      one.focus();
+      var sel = window.getSelection(), r = document.createRange();
+      r.selectNodeContents(one); r.collapse(false);
+      sel.removeAllRanges(); sel.addRange(r);
+    }
+  });
+
+  /* ============================ appearance ============================ */
+  function applySize(){
+    document.documentElement.style.setProperty("--size", state.size + "px");
+    sizeVal.textContent = state.size;
+    sizeSlider.value = state.size;
+  }
+
+  function applyAccent(){
+    var a = ACCENTS[state.accent];
+    document.documentElement.style.setProperty("--accent", a.hex);
+    document.documentElement.style.setProperty("--accent-soft", a.soft);
+    document.documentElement.style.setProperty("--wash-hi", a.hi);
+    document.documentElement.style.setProperty("--wash-lo", a.lo);
+    var kids = dotsEl.children;
+    for(var i = 0; i < kids.length; i++){
+      kids[i].classList.toggle("sel", i === state.accent);
+    }
+  }
+
+  ACCENTS.forEach(function(a, i){
+    var d = document.createElement("div");
+    d.className = "dot";
+    d.style.background = a.hex;
+    d.style.color = a.hex;
+    d.title = a.name;
+    d.addEventListener("click", function(){
+      state.accent = i; applyAccent(); save();
+    });
+    dotsEl.appendChild(d);
+  });
+
+  function labelFor(min){
+    if(min < 60) return min + " min";
+    var h = Math.floor(min / 60), m = min % 60;
+    return m ? h + " h " + m + " m" : h + " h";
+  }
+
+  function applyEvery(){
+    everySlider.value = state.everyIdx;
+    everyVal.textContent = labelFor(STEPS[state.everyIdx]);
+  }
+
+  everySlider.min = 0;
+  everySlider.max = STEPS.length - 1;
+
+  sizeSlider.addEventListener("input", function(){
+    state.size = parseInt(sizeSlider.value, 10);
+    applySize(); queueSave();
+  });
+
+  everySlider.addEventListener("input", function(){
+    state.everyIdx = parseInt(everySlider.value, 10);
+    applyEvery();
+    schedule();          // restart the countdown from now
+    queueSave();
+  });
+
+  /* ============================ sound ============================ */
+  var audioCtx = null;
+  function chime(){
+    if(!state.sound) return;
+    try{
+      if(!audioCtx){
+        var AC = window.AudioContext || window.webkitAudioContext;
+        if(!AC) return;
+        audioCtx = new AC();
+      }
+      if(audioCtx.state === "suspended") audioCtx.resume();
+      [880, 1320].forEach(function(f, i){
+        var o = audioCtx.createOscillator();
+        var g = audioCtx.createGain();
+        o.type = "sine";
+        o.frequency.value = f;
+        var t0 = audioCtx.currentTime + i * 0.14;
+        g.gain.setValueAtTime(0.0001, t0);
+        g.gain.exponentialRampToValueAtTime(0.10, t0 + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + 1.1);
+        o.connect(g); g.connect(audioCtx.destination);
+        o.start(t0); o.stop(t0 + 1.2);
+      });
+    }catch(e){ /* audio is a nicety, never a failure */ }
+  }
+
+  function applySound(){ soundBtn.classList.toggle("on", state.sound); }
+
+  soundBtn.addEventListener("click", function(){
+    state.sound = !state.sound;
+    applySound(); save();
+    if(state.sound) chime();     // unlock the context on the same gesture
+  });
+
+  /* ============================ the flash ============================ */
+  var PULSE = 1150, PULSES = 3;
+  var running = [];
+  var flashEnd = null;
+
+  var EASE_IN  = "cubic-bezier(.16,.9,.3,1)";   // snap to full brightness
+  var EASE_OUT = "cubic-bezier(.45,0,.55,1)";   // settle back to black
+
+  function flash(){
+    // Re-triggering mid-flash restarts cleanly rather than stacking.
+    running.forEach(function(a){ try{ a.cancel(); }catch(e){} });
+    running = [];
+
+    var opt = { duration: PULSE, iterations: PULSES, easing: "linear", fill: "none" };
+
+    // The field: a full-bleed wash that lifts the whole screen.
+    running.push(bloom.animate([
+      { opacity:0, transform:"scale(1.06)", offset:0,   easing:EASE_IN  },
+      { opacity:1, transform:"scale(1)",    offset:.16 },
+      { opacity:1, transform:"scale(1)",    offset:.42, easing:EASE_OUT },
+      { opacity:0, transform:"scale(1.04)", offset:.74 },
+      { opacity:0, transform:"scale(1.06)", offset:1    }
+    ], opt));
+
+    // The type inverts to near-black while the field is up: maximum
+    // legibility from across the room, and it reads as designed.
+    running.push(one.animate([
+      { color:"#F2F2F0", offset:0,   easing:EASE_IN  },
+      { color:"#120C02", offset:.13 },
+      { color:"#120C02", offset:.50, easing:EASE_OUT },
+      { color:"#F2F2F0", offset:.66 },
+      { color:"#F2F2F0", offset:1    }
+    ], opt));
+
+    // Specular sweep across the whole screen, once per pulse.
+    running.push(sheen.animate([
+      { transform:"translateX(-150%) skewX(-14deg)", opacity:0,   offset:0   },
+      { opacity:.85, offset:.16 },
+      { opacity:.85, offset:.54 },
+      { transform:"translateX(150%) skewX(-14deg)",  opacity:0,   offset:.70, easing:"cubic-bezier(.3,0,.2,1)" },
+      { transform:"translateX(150%) skewX(-14deg)",  opacity:0,   offset:1   }
+    ], opt));
+
+    // Camera-flash punch on the leading edge.
+    running.push(snap.animate([
+      { opacity:0,   offset:0   },
+      { opacity:.20, offset:.07 },
+      { opacity:0,   offset:.26 },
+      { opacity:0,   offset:1   }
+    ], opt));
+
+    // Luminous edge, like a lightbox coming on.
+    running.push(frame.animate([
+      { opacity:0,  offset:0,   easing:EASE_IN },
+      { opacity:1,  offset:.14 },
+      { opacity:.8, offset:.44, easing:EASE_OUT },
+      { opacity:0,  offset:.72 },
+      { opacity:0,  offset:1    }
+    ], opt));
+
+    running.push(stage.animate([
+      { transform:"scale(1)",     offset:0,   easing:EASE_IN  },
+      { transform:"scale(1.026)", offset:.17 },
+      { transform:"scale(1.026)", offset:.44, easing:EASE_OUT },
+      { transform:"scale(1)",     offset:.74 },
+      { transform:"scale(1)",     offset:1    }
+    ], opt));
+
+    document.body.classList.add("flashing");
+    clearTimeout(flashEnd);
+    flashEnd = setTimeout(function(){
+      document.body.classList.remove("flashing");
+    }, PULSE * PULSES);
+
+    chime();
+  }
+
+  /* ============================ scheduling ============================ */
+  function schedule(){
+    state.nextAt = Date.now() + intervalMs();
+    save();
+    render();
+  }
+
+  function pad(n){ return n < 10 ? "0" + n : "" + n; }
+
+  function render(){
+    var left = Math.max(0, state.nextAt - Date.now());
+    var total = intervalMs();
+    var s = Math.ceil(left / 1000);
+    var h = Math.floor(s / 3600);
+    var m = Math.floor((s % 3600) / 60);
+    var sec = s % 60;
+    nextEl.textContent = h ? (h + ":" + pad(m) + ":" + pad(sec)) : (pad(m) + ":" + pad(sec));
+    railFill.style.width = (100 * (1 - left / total)).toFixed(2) + "%";
+  }
+
+  function tick(){
+    if(Date.now() >= state.nextAt){
+      flash();
+      schedule();
+    }else{
+      render();
+    }
+  }
+
+  // Restore an in-flight countdown across a reload, but never a stale one.
+  (function primeSchedule(){
+    var left = state.nextAt - Date.now();
+    if(!(left > 0 && left <= intervalMs())) state.nextAt = Date.now() + intervalMs();
+  })();
+
+  setInterval(tick, 1000);
+
+  // Displays sleep and background tabs throttle — resync on wake.
+  document.addEventListener("visibilitychange", function(){
+    if(!document.hidden) tick();
+  });
+
+  /* ============================ chrome ============================ */
+  testBtn.addEventListener("click", function(){ flash(); });
+
+  fsBtn.addEventListener("click", function(){
+    if(document.fullscreenElement){ document.exitFullscreen(); }
+    else{ document.documentElement.requestFullscreen(); }
+  });
+  document.addEventListener("fullscreenchange", function(){
+    fsBtn.textContent = document.fullscreenElement ? "Exit full screen" : "Full screen";
+  });
+
+  // Idle: hide the HUD and the cursor so the screen is just the words.
+  var idleTimer = null;
+  function wake(){
+    document.body.classList.remove("idle");
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(function(){ document.body.classList.add("idle"); }, 3500);
+  }
+  ["mousemove","mousedown","keydown","touchstart","wheel"].forEach(function(ev){
+    document.addEventListener(ev, wake, { passive:true });
+  });
+  wake();
+
+  document.addEventListener("keydown", function(e){
+    if(e.key === "Escape"){ one.blur(); return; }
+    if(document.activeElement === one) return;   // never steal keys while typing
+    if(e.metaKey || e.ctrlKey || e.altKey) return;
+    var k = e.key.toLowerCase();
+    if(k === "f"){ e.preventDefault(); fsBtn.click(); }
+    else if(k === "t"){ e.preventDefault(); flash(); }
+    else if(k === "s"){ e.preventDefault(); soundBtn.click(); }
+  });
+
+  window.addEventListener("beforeunload", function(){
+    clearTimeout(saveTimer);
+    save();
+  });
+
+  /* ============================ boot ============================ */
+  applySize();
+  applyEvery();
+  applyAccent();
+  applySound();
+  syncEmpty();
+  render();
+  if(!saved.text) one.focus();
+})();
+</script>
+</body>
+</html>
