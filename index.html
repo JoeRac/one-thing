@@ -5,19 +5,14 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>ONE THING</title>
 <style>
+  /* Every theme-able value is a custom property on :root. The THEMES table in
+     the script below is the only place they are ever set, which keeps the CSS
+     to one copy and lets the style pills render themselves from the same data. */
   :root{
-    --accent: #F0B429;
-    --accent-soft: rgba(240,180,41,.55);
-    --wash-hi: #FFE9A8;
-    --wash-lo: #7A5209;
     --size: 110px;
-    --bg: #070809;
-    --ink: #F2F2F0;
-    --hud-bg: rgba(255,255,255,.045);
-    --hud-line: rgba(255,255,255,.10);
-    --hud-ink: rgba(255,255,255,.62);
-    --font: -apple-system, BlinkMacSystemFont, "Helvetica Neue", "Inter",
-            "Segoe UI", Roboto, Arial, sans-serif;
+    --ui-font: -apple-system, BlinkMacSystemFont, "Helvetica Neue", "Segoe UI",
+               Roboto, Arial, sans-serif;
+    color-scheme: var(--scheme);
   }
 
   *{ box-sizing:border-box; margin:0; padding:0; }
@@ -27,11 +22,11 @@
   body{
     background: var(--bg);
     color: var(--ink);
-    font-family: var(--font);
+    font-family: var(--ui-font);
     overflow: hidden;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    transition: cursor .2s;
+    transition: background-color .45s ease, color .45s ease;
   }
   body.idle{ cursor:none; }
 
@@ -39,62 +34,69 @@
   #vignette{
     position:fixed; inset:0; pointer-events:none; z-index:1;
     background:
-      radial-gradient(120% 90% at 50% 0%, rgba(255,255,255,.055) 0%, transparent 55%),
-      radial-gradient(100% 100% at 50% 50%, transparent 40%, rgba(0,0,0,.65) 100%);
+      radial-gradient(120% 90% at 50% 0%, var(--glow-top) 0%, transparent 55%),
+      radial-gradient(100% 100% at 50% 50%, transparent 40%, var(--vig) 100%);
   }
   #grain{
     position:fixed; inset:-50%; pointer-events:none; z-index:3;
-    opacity:.030; mix-blend-mode:overlay;
+    opacity: var(--grain); mix-blend-mode:overlay;
     background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/></filter><rect width='200' height='200' filter='url(%23n)'/></svg>");
   }
 
   /* ---------- the one thing ---------- */
+  /* column + margin-block:auto centres the line but still scrolls correctly
+     when the text is taller than the screen (justify-content:center would put
+     the overflowing top out of reach). */
   #stage{
     position:relative; z-index:4;
     height:100%;
-    padding: 6.5vh 6vw 15vh;
+    display:flex; flex-direction:column;
+    /* symmetric, or margin-block:auto centres against uneven padding */
+    padding: 10vh 6vw;
     overflow-y:auto;
     scrollbar-width:none;
-    will-change: transform, filter;
   }
   #stage::-webkit-scrollbar{ display:none; }
 
   #one{
+    margin-block: auto;
+    font-family: var(--font);
     font-size: var(--size);
-    line-height: 1.02;
-    font-weight: 600;
-    letter-spacing: -.005em;
-    text-transform: uppercase;
+    font-weight: var(--weight);
+    letter-spacing: var(--tracking);
+    line-height: var(--leading);
+    text-align: center;
     white-space: pre-wrap;
     overflow-wrap: break-word;
     outline: none;
     color: var(--ink);
     caret-color: var(--accent);
     text-wrap: balance;
-    transition: font-size .12s cubic-bezier(.2,.8,.2,1);
+    padding: 2vh 0;
+    transition: font-size .12s cubic-bezier(.2,.8,.2,1), color .45s ease;
   }
-  #one::selection{ background: var(--accent); color:#000; }
+  #one::selection{ background: var(--accent); color: var(--on-ink); }
 
   #one.is-empty::before{
     content: attr(data-placeholder);
-    color: rgba(255,255,255,.14);
+    color: var(--placeholder);
     pointer-events:none;
   }
 
   /* ---------- flash layers ----------
-     The bloom sits BEHIND the type (z-2) so the words stay the brightest
-     thing on screen; the sheen and frame ride above it (z-20).           */
+     The bloom sits BEHIND the type (z-2) so the words stay the most legible
+     thing on screen; the sheen and frame ride above it (z-20). */
   #flashBack { position:fixed; inset:0; z-index:2;  pointer-events:none; }
   #flashFront{ position:fixed; inset:0; z-index:20; pointer-events:none; }
 
   #bloom{
     position:absolute; inset:0; opacity:0;
     background:
-      radial-gradient(135% 105% at 50% 30%,
-        var(--wash-hi) 0%,
-        var(--accent)  36%,
-        var(--wash-lo) 84%,
-        #150E02      100%);
+      radial-gradient(135% 105% at 50% 40%,
+        var(--wash-hi)   0%,
+        var(--accent)   36%,
+        var(--wash-lo)  84%,
+        var(--wash-edge) 100%);
   }
   #snap{
     position:absolute; inset:0; opacity:0;
@@ -119,13 +121,13 @@
 
   /* ---------- progress rail ---------- */
   #rail{
-    position:fixed; left:0; bottom:0; height:2px; width:100%;
+    position:fixed; left:0; bottom:0; height:4px; width:100%;
     z-index:15; pointer-events:none;
-    background: rgba(255,255,255,.05);
+    background: var(--rail-bg);
   }
   #railFill{
     height:100%; width:0%;
-    background: linear-gradient(90deg, rgba(255,255,255,.08), var(--accent));
+    background: linear-gradient(90deg, var(--rail-from), var(--accent));
     box-shadow: 0 0 12px var(--accent-soft);
     transition: width 1s linear;
   }
@@ -134,7 +136,7 @@
   #hud{
     position:fixed; z-index:30;
     left:50%; bottom:26px; transform:translateX(-50%);
-    display:flex; align-items:center; gap:22px; flex-wrap:wrap;
+    display:flex; align-items:center; gap:18px; flex-wrap:wrap;
     justify-content:center;
     /* Fixed + left:50% alone caps shrink-to-fit at 50vw, which wraps the bar
        onto two rows even on a wide display. max-content opts out of that. */
@@ -144,14 +146,16 @@
     border-radius: 20px;
     background: var(--hud-bg);
     border: 1px solid var(--hud-line);
-    box-shadow: 0 24px 60px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.07);
+    box-shadow: 0 24px 60px var(--hud-shadow), inset 0 1px 0 var(--hud-sheen);
     -webkit-backdrop-filter: blur(24px) saturate(160%);
     backdrop-filter: blur(24px) saturate(160%);
     color: var(--hud-ink);
+    font-family: var(--ui-font);
     font-size: 10.5px;
     letter-spacing: .13em;
     text-transform: uppercase;
-    transition: opacity .5s ease, transform .5s cubic-bezier(.2,.8,.2,1);
+    transition: opacity .5s ease, transform .5s cubic-bezier(.2,.8,.2,1),
+                background-color .45s ease, border-color .45s ease, color .45s ease;
   }
   body.idle #hud,
   body.flashing #hud{ opacity:0; transform:translateX(-50%) translateY(14px); pointer-events:none; }
@@ -161,63 +165,75 @@
 
   .grp{ display:flex; flex-direction:column; gap:7px; }
   .grp .lbl{ display:flex; justify-content:space-between; gap:14px; }
-  .grp .lbl b{ color:#fff; font-weight:600; letter-spacing:.10em; }
+  .grp .lbl b{ color:var(--hud-strong); font-weight:600; letter-spacing:.10em; }
   .sep{ width:1px; align-self:stretch; background:var(--hud-line); }
 
   input[type=range]{
     -webkit-appearance:none; appearance:none;
-    width:170px; height:3px; border-radius:3px;
-    background: rgba(255,255,255,.14);
+    width:150px; height:3px; border-radius:3px;
+    background: var(--track);
     outline:none; cursor:pointer;
   }
   input[type=range]::-webkit-slider-thumb{
     -webkit-appearance:none; appearance:none;
     width:13px; height:13px; border-radius:50%;
-    background:#fff;
-    box-shadow: 0 0 0 1px rgba(0,0,0,.35), 0 0 14px var(--accent-soft);
+    background: var(--thumb);
+    box-shadow: 0 0 0 1px var(--hud-shadow), 0 0 14px var(--accent-soft);
     transition: transform .15s ease;
   }
   input[type=range]::-webkit-slider-thumb:hover{ transform:scale(1.22); }
   input[type=range]::-moz-range-thumb{
-    width:13px; height:13px; border:0; border-radius:50%; background:#fff;
+    width:13px; height:13px; border:0; border-radius:50%; background:var(--thumb);
     box-shadow: 0 0 14px var(--accent-soft);
   }
 
   .btn{
-    font:inherit; letter-spacing:.13em; text-transform:uppercase;
+    font-family: var(--ui-font); font-size:10.5px;
+    letter-spacing:.13em; text-transform:uppercase;
     color:var(--hud-ink); background:transparent;
     border:1px solid var(--hud-line); border-radius:999px;
     padding:8px 14px; cursor:pointer;
     transition: all .18s ease;
     white-space:nowrap;
   }
-  .btn:hover{ color:#fff; border-color:rgba(255,255,255,.28); background:rgba(255,255,255,.05); }
-  .btn.on{ color:#000; background:var(--accent); border-color:var(--accent); }
+  .btn:hover{ color:var(--hud-strong); border-color:var(--hud-line-hi); background:var(--hud-hover); }
+  .btn.on{ color:var(--on-ink); background:var(--accent); border-color:var(--accent); }
 
-  .dots{ display:flex; gap:8px; }
-  .dot{
-    width:13px; height:13px; border-radius:50%; cursor:pointer;
-    border:1px solid rgba(255,255,255,.18);
-    transition: transform .18s cubic-bezier(.2,.8,.2,1), box-shadow .18s ease;
+  /* ---------- style pills ---------- */
+  /* Each pill paints itself in its own theme, so the row doubles as a preview. */
+  .pills{ display:flex; gap:7px; }
+  .pill{
+    border-radius:999px; cursor:pointer;
+    padding:8px 13px;
+    font-size:10.5px; letter-spacing:.11em; text-transform:uppercase;
+    border:1px solid transparent;
+    transition: transform .18s cubic-bezier(.2,.8,.2,1), box-shadow .18s ease, opacity .18s ease;
+    opacity:.62;
+    white-space:nowrap;
   }
-  .dot:hover{ transform:scale(1.2); }
-  .dot.sel{ box-shadow: 0 0 0 2px var(--bg), 0 0 0 3px currentColor; transform:scale(1.12); }
+  .pill:hover{ opacity:1; transform:translateY(-1px); }
+  .pill.sel{
+    opacity:1;
+    box-shadow: 0 0 0 1px var(--hud-bg), 0 0 0 2.5px currentColor;
+  }
 
-  #next{ font-variant-numeric: tabular-nums; color:#fff; font-weight:600; }
+  #next{ font-variant-numeric: tabular-nums; color:var(--hud-strong); font-weight:600; }
 
   /* ---------- toast ---------- */
   #toast{
     position:fixed; z-index:31; right:22px; top:20px;
+    font-family: var(--ui-font);
     font-size:10px; letter-spacing:.16em; text-transform:uppercase;
-    color: rgba(255,255,255,.42);
+    color: var(--hud-ink);
     opacity:0; transition: opacity .35s ease;
     pointer-events:none;
   }
   #toast.show{ opacity:1; }
   #warn{
     position:fixed; z-index:31; left:22px; top:20px;
+    font-family: var(--ui-font);
     font-size:10px; letter-spacing:.13em; text-transform:uppercase;
-    color:#ff9b6a; display:none;
+    color:#E0563A; display:none;
   }
 </style>
 </head>
@@ -263,12 +279,12 @@
 
   <div class="grp">
     <div class="lbl"><span>Next</span><b id="next">--:--</b></div>
-    <div class="dots" id="dots"></div>
+    <div class="pills" id="pills"></div>
   </div>
 
   <div class="sep"></div>
 
-  <button class="btn" id="testBtn">Flash now</button>
+  <button class="btn" id="testBtn">Flash</button>
   <button class="btn" id="soundBtn">Sound</button>
   <button class="btn" id="fsBtn">Full screen</button>
 </div>
@@ -276,6 +292,126 @@
 <script>
 (function(){
   "use strict";
+
+  /* ============================ themes ============================ */
+  /* Fonts are all macOS system faces — nothing is fetched, so this still
+     works offline from a double-clicked file. */
+  var DARK_HUD = {
+    "--hud-bg":"rgba(255,255,255,.05)",
+    "--hud-line":"rgba(255,255,255,.11)",
+    "--hud-line-hi":"rgba(255,255,255,.30)",
+    "--hud-ink":"rgba(255,255,255,.62)",
+    "--hud-strong":"#FFFFFF",
+    "--hud-hover":"rgba(255,255,255,.06)",
+    "--hud-shadow":"rgba(0,0,0,.55)",
+    "--hud-sheen":"rgba(255,255,255,.07)",
+    "--track":"rgba(255,255,255,.16)",
+    "--thumb":"#FFFFFF",
+    "--rail-bg":"rgba(255,255,255,.07)",
+    "--rail-from":"rgba(255,255,255,.10)",
+    "--glow-top":"rgba(255,255,255,.055)",
+    "--vig":"rgba(0,0,0,.65)",
+    "--grain":".030",
+    "--snap":".20",
+    "--scheme":"dark"
+  };
+
+  var LIGHT_HUD = {
+    "--hud-bg":"rgba(255,255,255,.55)",
+    "--hud-line":"rgba(0,0,0,.12)",
+    "--hud-line-hi":"rgba(0,0,0,.30)",
+    "--hud-ink":"rgba(0,0,0,.55)",
+    "--hud-strong":"#000000",
+    "--hud-hover":"rgba(0,0,0,.05)",
+    "--hud-shadow":"rgba(0,0,0,.16)",
+    "--hud-sheen":"rgba(255,255,255,.8)",
+    "--track":"rgba(0,0,0,.16)",
+    "--thumb":"#141414",
+    "--rail-bg":"rgba(0,0,0,.08)",
+    "--rail-from":"rgba(0,0,0,.10)",
+    "--glow-top":"rgba(255,255,255,0)",
+    "--vig":"rgba(0,0,0,.09)",
+    "--grain":".018",
+    "--snap":".10",
+    "--scheme":"light"
+  };
+
+  function theme(name, base, vars){
+    var out = { name:name };
+    for(var k in base) out[k] = base[k];
+    for(var j in vars) out[j] = vars[j];
+    return out;
+  }
+
+  var THEMES = [
+    theme("Midnight", DARK_HUD, {
+      "--bg":"#07080A",
+      "--ink":"#F2F2F0",
+      "--font":'-apple-system, BlinkMacSystemFont, "Helvetica Neue", "Segoe UI", Roboto, Arial, sans-serif',
+      "--weight":"600",
+      "--tracking":"-.018em",
+      "--leading":"1.04",
+      "--accent":"#F0B429",
+      "--accent-soft":"rgba(240,180,41,.55)",
+      "--wash-hi":"#FFEDB8",
+      "--wash-lo":"#7A5209",
+      "--wash-edge":"#150E02",
+      "--flash-ink":"#140D02",
+      "--on-ink":"#000000",
+      "--placeholder":"rgba(255,255,255,.15)"
+    }),
+
+    theme("Noir", DARK_HUD, {
+      "--bg":"#0A0908",
+      "--ink":"#EFE4D6",
+      "--font":'Didot, "Bodoni 72", "Hoefler Text", Garamond, Georgia, serif',
+      "--weight":"400",
+      "--tracking":".004em",
+      "--leading":"1.08",
+      "--accent":"#B3382F",
+      "--accent-soft":"rgba(179,56,47,.55)",
+      "--wash-hi":"#F9D2C5",
+      "--wash-lo":"#5A140E",
+      "--wash-edge":"#170603",
+      "--flash-ink":"#1A0805",
+      "--on-ink":"#FFFFFF",
+      "--placeholder":"rgba(239,228,214,.17)"
+    }),
+
+    theme("Paper", LIGHT_HUD, {
+      "--bg":"#F3EFE6",
+      "--ink":"#17140F",
+      "--font":'"Iowan Old Style", "Palatino Linotype", Palatino, "New York", Georgia, serif',
+      "--weight":"600",
+      "--tracking":"-.008em",
+      "--leading":"1.08",
+      "--accent":"#A8321F",
+      "--accent-soft":"rgba(168,50,31,.45)",
+      "--wash-hi":"#FFDCA8",
+      "--wash-lo":"#6B1B0D",
+      "--wash-edge":"#2A0A04",
+      "--flash-ink":"#1B0B04",
+      "--on-ink":"#FFFFFF",
+      "--placeholder":"rgba(23,20,15,.22)"
+    }),
+
+    theme("Studio", LIGHT_HUD, {
+      "--bg":"#FBFBF9",
+      "--ink":"#0E1014",
+      "--font":'"Avenir Next", Avenir, Futura, "Helvetica Neue", sans-serif',
+      "--weight":"600",
+      "--tracking":"-.022em",
+      "--leading":"1.02",
+      "--accent":"#1B4DE4",
+      "--accent-soft":"rgba(27,77,228,.42)",
+      "--wash-hi":"#D2E0FF",
+      "--wash-lo":"#08237F",
+      "--wash-edge":"#041038",
+      "--flash-ink":"#061029",
+      "--on-ink":"#FFFFFF",
+      "--placeholder":"rgba(14,16,20,.20)"
+    })
+  ];
 
   /* ============================ storage ============================ */
   var KEY = "onething.v1";
@@ -294,10 +430,10 @@
   }
   function save(){
     mem = {
-      text:     readText(),
+      text:     one.innerText,
       size:     state.size,
       everyIdx: state.everyIdx,
-      accent:   state.accent,
+      theme:    state.theme,
       sound:    state.sound,
       nextAt:   state.nextAt
     };
@@ -314,13 +450,6 @@
   var STEPS = [1,2,3,4,5,6,7,8,9,10,12,15,20,25,30,35,40,45,50,55,60,
                75,90,105,120,150,180,210,240,300,360,420,480,540,600,660,720];
 
-  var ACCENTS = [
-    { name:"Gold",    hex:"#F0B429", soft:"rgba(240,180,41,.55)", hi:"#FFEDB8", lo:"#7A5209" },
-    { name:"Ice",     hex:"#5AC8FA", soft:"rgba(90,200,250,.55)", hi:"#D8F3FF", lo:"#0B4F70" },
-    { name:"Ember",   hex:"#FF4D6D", soft:"rgba(255,77,109,.55)", hi:"#FFD5DD", lo:"#7A1027" },
-    { name:"Verdant", hex:"#3DDC97", soft:"rgba(61,220,151,.55)", hi:"#CFFBE6", lo:"#0C5B3B" }
-  ];
-
   /* ============================ elements ============================ */
   var one        = document.getElementById("one");
   var stage      = document.getElementById("stage");
@@ -334,7 +463,8 @@
   var sizeVal    = document.getElementById("sizeVal");
   var everyVal   = document.getElementById("everyVal");
   var nextEl     = document.getElementById("next");
-  var dotsEl     = document.getElementById("dots");
+  var pillsEl    = document.getElementById("pills");
+  var hud        = document.getElementById("hud");
   var toast      = document.getElementById("toast");
   var testBtn    = document.getElementById("testBtn");
   var soundBtn   = document.getElementById("soundBtn");
@@ -346,7 +476,7 @@
   var state = {
     size:     typeof saved.size === "number" ? saved.size : 110,
     everyIdx: typeof saved.everyIdx === "number" ? saved.everyIdx : STEPS.indexOf(15),
-    accent:   typeof saved.accent === "number" ? saved.accent : 0,
+    theme:    typeof saved.theme === "number" ? saved.theme : 0,
     sound:    saved.sound === true,
     nextAt:   typeof saved.nextAt === "number" ? saved.nextAt : 0
   };
@@ -354,7 +484,7 @@
   // Clamp anything that came back malformed.
   state.size     = Math.min(380, Math.max(28, state.size));
   state.everyIdx = Math.min(STEPS.length - 1, Math.max(0, state.everyIdx));
-  state.accent   = Math.min(ACCENTS.length - 1, Math.max(0, state.accent));
+  state.theme    = Math.min(THEMES.length - 1, Math.max(0, state.theme));
 
   function intervalMs(){ return STEPS[state.everyIdx] * 60000; }
 
@@ -365,18 +495,6 @@
     one.setAttribute("contenteditable", "true");
   }
   one.textContent = typeof saved.text === "string" ? saved.text : "";
-
-  // What we persist. innerText is the only read that preserves the line
-  // breaks contenteditable inserts as <div>s — but it also returns the
-  // CSS-uppercased text, so the transform comes off for the read. This all
-  // happens inside one task, so nothing is ever painted mid-swap.
-  function readText(){
-    var prev = one.style.textTransform;
-    one.style.textTransform = "none";
-    var txt = one.innerText;
-    one.style.textTransform = prev;
-    return txt;
-  }
 
   function syncEmpty(){
     one.classList.toggle("is-empty", one.innerText.trim() === "");
@@ -408,15 +526,9 @@
     document.execCommand("insertText", false, txt);
   });
 
-  // Clicking anywhere in the empty space below the text drops the caret in.
-  stage.addEventListener("mousedown", function(e){
-    if(e.target === stage){
-      e.preventDefault();
-      one.focus();
-      var sel = window.getSelection(), r = document.createRange();
-      r.selectNodeContents(one); r.collapse(false);
-      sel.removeAllRanges(); sel.addRange(r);
-    }
+  // Click anywhere off the text to drop focus, so the caret stops blinking.
+  document.addEventListener("mousedown", function(e){
+    if(!one.contains(e.target)) one.blur();
   });
 
   /* ============================ appearance ============================ */
@@ -426,28 +538,30 @@
     sizeSlider.value = state.size;
   }
 
-  function applyAccent(){
-    var a = ACCENTS[state.accent];
-    document.documentElement.style.setProperty("--accent", a.hex);
-    document.documentElement.style.setProperty("--accent-soft", a.soft);
-    document.documentElement.style.setProperty("--wash-hi", a.hi);
-    document.documentElement.style.setProperty("--wash-lo", a.lo);
-    var kids = dotsEl.children;
+  function applyTheme(){
+    var t = THEMES[state.theme];
+    for(var k in t){
+      if(k !== "name") document.documentElement.style.setProperty(k, t[k]);
+    }
+    var kids = pillsEl.children;
     for(var i = 0; i < kids.length; i++){
-      kids[i].classList.toggle("sel", i === state.accent);
+      kids[i].classList.toggle("sel", i === state.theme);
     }
   }
 
-  ACCENTS.forEach(function(a, i){
-    var d = document.createElement("div");
-    d.className = "dot";
-    d.style.background = a.hex;
-    d.style.color = a.hex;
-    d.title = a.name;
-    d.addEventListener("click", function(){
-      state.accent = i; applyAccent(); save();
+  THEMES.forEach(function(t, i){
+    var p = document.createElement("div");
+    p.className = "pill";
+    p.textContent = t.name;
+    p.title = t.name;
+    p.style.background = t["--bg"];
+    p.style.color = t["--accent"];
+    p.style.fontFamily = t["--font"];
+    p.style.borderColor = t["--hud-line"];
+    p.addEventListener("click", function(){
+      state.theme = i; applyTheme(); save();
     });
-    dotsEl.appendChild(d);
+    pillsEl.appendChild(p);
   });
 
   function labelFor(min){
@@ -516,12 +630,17 @@
   var flashEnd = null;
 
   var EASE_IN  = "cubic-bezier(.16,.9,.3,1)";   // snap to full brightness
-  var EASE_OUT = "cubic-bezier(.45,0,.55,1)";   // settle back to black
+  var EASE_OUT = "cubic-bezier(.45,0,.55,1)";   // settle back
 
   function flash(){
     // Re-triggering mid-flash restarts cleanly rather than stacking.
     running.forEach(function(a){ try{ a.cancel(); }catch(e){} });
     running = [];
+
+    var cs       = getComputedStyle(document.documentElement);
+    var restInk  = cs.getPropertyValue("--ink").trim();
+    var flashInk = cs.getPropertyValue("--flash-ink").trim();
+    var snapPeak = parseFloat(cs.getPropertyValue("--snap")) || 0.2;
 
     var opt = { duration: PULSE, iterations: PULSES, easing: "linear", fill: "none" };
 
@@ -534,14 +653,14 @@
       { opacity:0, transform:"scale(1.06)", offset:1    }
     ], opt));
 
-    // The type inverts to near-black while the field is up: maximum
-    // legibility from across the room, and it reads as designed.
+    // The type darkens against the lit field: maximum legibility from across
+    // the room, and it reads as designed rather than as a glitch.
     running.push(one.animate([
-      { color:"#F2F2F0", offset:0,   easing:EASE_IN  },
-      { color:"#120C02", offset:.13 },
-      { color:"#120C02", offset:.50, easing:EASE_OUT },
-      { color:"#F2F2F0", offset:.66 },
-      { color:"#F2F2F0", offset:1    }
+      { color:restInk,  offset:0,   easing:EASE_IN  },
+      { color:flashInk, offset:.13 },
+      { color:flashInk, offset:.50, easing:EASE_OUT },
+      { color:restInk,  offset:.66 },
+      { color:restInk,  offset:1    }
     ], opt));
 
     // Specular sweep across the whole screen, once per pulse.
@@ -555,10 +674,10 @@
 
     // Camera-flash punch on the leading edge.
     running.push(snap.animate([
-      { opacity:0,   offset:0   },
-      { opacity:.20, offset:.07 },
-      { opacity:0,   offset:.26 },
-      { opacity:0,   offset:1   }
+      { opacity:0,        offset:0   },
+      { opacity:snapPeak, offset:.07 },
+      { opacity:0,        offset:.26 },
+      { opacity:0,        offset:1   }
     ], opt));
 
     // Luminous edge, like a lightbox coming on.
@@ -668,13 +787,23 @@
   });
 
   /* ============================ boot ============================ */
+  applyTheme();
   applySize();
   applyEvery();
-  applyAccent();
   applySound();
   syncEmpty();
   render();
-  if(!saved.text) one.focus();
+
+  if(!saved.text){
+    one.focus();               // nothing written yet — let them just start typing
+  }else{
+    // Chrome restores focus to a contenteditable across a reload, which leaves a
+    // caret blinking on a screen nobody clicked into. Take it back, after the
+    // browser has finished restoring.
+    var dropCaret = function(){ if(document.activeElement === one) one.blur(); };
+    requestAnimationFrame(dropCaret);
+    window.addEventListener("load", dropCaret);
+  }
 })();
 </script>
 </body>
