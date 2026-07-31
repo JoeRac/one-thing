@@ -136,6 +136,9 @@
     left:50%; bottom:26px; transform:translateX(-50%);
     display:flex; align-items:center; gap:22px; flex-wrap:wrap;
     justify-content:center;
+    /* Fixed + left:50% alone caps shrink-to-fit at 50vw, which wraps the bar
+       onto two rows even on a wide display. max-content opts out of that. */
+    width: max-content;
     max-width: calc(100vw - 32px);
     padding: 13px 20px;
     border-radius: 20px;
