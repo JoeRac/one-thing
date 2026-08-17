@@ -10,6 +10,7 @@
      to one copy and lets the style pills render themselves from the same data. */
   :root{
     --size: 110px;
+    --side-size: 34px;
     --ui-font: -apple-system, BlinkMacSystemFont, "Helvetica Neue", "Segoe UI",
                Roboto, Arial, sans-serif;
     color-scheme: var(--scheme);
@@ -44,19 +45,62 @@
   }
 
   /* ---------- the one thing ---------- */
+  #surface{
+    position:relative; z-index:4;
+    height:100%;
+    display:flex;
+  }
+
   /* column + margin-block:auto centres the line but still scrolls correctly
      when the text is taller than the screen (justify-content:center would put
      the overflowing top out of reach). */
   #stage{
-    position:relative; z-index:4;
+    flex:1; min-width:0;
     height:100%;
     display:flex; flex-direction:column;
     /* symmetric, or margin-block:auto centres against uneven padding */
-    padding: 10vh 6vw;
+    padding: 10vh 5vw;
     overflow-y:auto;
     scrollbar-width:none;
   }
   #stage::-webkit-scrollbar{ display:none; }
+
+  /* ---------- sidebar ---------- */
+  /* Same face, same palette, just smaller — and top-aligned rather than
+     centred, because it holds a running list rather than one statement. */
+  #sidebar{
+    flex: 0 0 25%; min-width:0;
+    height:100%;
+    display:flex; flex-direction:column;
+    padding: 7vh 2vw 12vh;
+    overflow-y:auto;
+    scrollbar-width:none;
+    border-right: 1px solid var(--hud-line);
+    transition: border-color .45s ease;
+  }
+  #sidebar::-webkit-scrollbar{ display:none; }
+  body.no-side #sidebar{ display:none; }
+
+  #side{
+    font-family: var(--font);
+    font-size: var(--side-size);
+    font-weight: var(--weight);
+    letter-spacing: var(--tracking);
+    line-height: 1.28;
+    color: var(--ink);
+    caret-color: var(--accent);
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+    outline: none;
+    min-height: 1.28em;
+    transition: font-size .12s cubic-bezier(.2,.8,.2,1), color .45s ease;
+  }
+  #side::selection{ background: var(--accent); color: var(--on-ink); }
+  #side.is-empty::before{
+    content: attr(data-placeholder);
+    color: var(--placeholder);
+    pointer-events:none;
+  }
 
   #one{
     margin-block: auto;
@@ -136,7 +180,7 @@
   #hud{
     position:fixed; z-index:30;
     left:50%; bottom:26px; transform:translateX(-50%);
-    display:flex; align-items:center; gap:18px; flex-wrap:wrap;
+    display:flex; align-items:center; gap:14px; flex-wrap:wrap;
     justify-content:center;
     /* Fixed + left:50% alone caps shrink-to-fit at 50vw, which wraps the bar
        onto two rows even on a wide display. max-content opts out of that. */
@@ -170,7 +214,7 @@
 
   input[type=range]{
     -webkit-appearance:none; appearance:none;
-    width:150px; height:3px; border-radius:3px;
+    width:118px; height:3px; border-radius:3px;
     background: var(--track);
     outline:none; cursor:pointer;
   }
@@ -192,7 +236,7 @@
     letter-spacing:.13em; text-transform:uppercase;
     color:var(--hud-ink); background:transparent;
     border:1px solid var(--hud-line); border-radius:999px;
-    padding:8px 14px; cursor:pointer;
+    padding:8px 12px; cursor:pointer;
     transition: all .18s ease;
     white-space:nowrap;
   }
@@ -281,9 +325,14 @@
 
 <div id="grain"></div>
 
-<main id="stage">
-  <div id="one" data-placeholder="Type the one thing"></div>
-</main>
+<div id="surface">
+  <aside id="sidebar">
+    <div id="side" data-placeholder="Other things to keep in view"></div>
+  </aside>
+  <main id="stage">
+    <div id="one" data-placeholder="Type the one thing"></div>
+  </main>
+</div>
 
 <div id="flashFront" aria-hidden="true">
   <div id="sheen"></div>
@@ -298,8 +347,15 @@
 
 <div id="hud">
   <div class="grp">
-    <div class="lbl"><span>Size</span><b id="sizeVal">110</b></div>
+    <div class="lbl"><span>Main size</span><b id="sizeVal">110</b></div>
     <input type="range" id="sizeSlider" min="28" max="380" step="2" value="110">
+  </div>
+
+  <div class="sep"></div>
+
+  <div class="grp">
+    <div class="lbl"><span>Side size</span><b id="sideSizeVal">34</b></div>
+    <input type="range" id="sideSizeSlider" min="12" max="120" step="1" value="34">
   </div>
 
   <div class="sep"></div>
@@ -319,6 +375,7 @@
   <div class="sep"></div>
 
   <button class="btn" id="testBtn">Flash</button>
+  <button class="btn" id="sideBtn">Sidebar</button>
   <button class="btn" id="soundBtn">Sound</button>
   <button class="btn" id="syncBtn">Sync</button>
   <button class="btn" id="fsBtn">Full screen</button>
@@ -475,12 +532,16 @@
   function save(){
     mem = {
       text:      one.innerText,
+      side:      side.innerText,
       size:      state.size,
+      sideSize:  state.sideSize,
+      sideOn:    state.sideOn,
       everyIdx:  state.everyIdx,
       theme:     state.theme,
       sound:     state.sound,
       nextAt:    state.nextAt,
-      updatedAt: state.updatedAt
+      updatedAt:     state.updatedAt,
+      sideUpdatedAt: state.sideUpdatedAt
     };
     if(!storageOK) return;
     try{ localStorage.setItem(KEY, JSON.stringify(mem)); }
@@ -497,6 +558,8 @@
 
   /* ============================ elements ============================ */
   var one        = document.getElementById("one");
+  var side       = document.getElementById("side");
+  var surface    = document.getElementById("surface");
   var stage      = document.getElementById("stage");
   var bloom      = document.getElementById("bloom");
   var sheen      = document.getElementById("sheen");
@@ -504,8 +567,11 @@
   var frame      = document.getElementById("frame");
   var railFill   = document.getElementById("railFill");
   var sizeSlider = document.getElementById("sizeSlider");
+  var sideSizeSlider = document.getElementById("sideSizeSlider");
   var everySlider= document.getElementById("everySlider");
   var sizeVal    = document.getElementById("sizeVal");
+  var sideSizeVal= document.getElementById("sideSizeVal");
+  var sideBtn    = document.getElementById("sideBtn");
   var everyVal   = document.getElementById("everyVal");
   var nextEl     = document.getElementById("next");
   var pillsEl    = document.getElementById("pills");
@@ -524,12 +590,17 @@
     theme:    typeof saved.theme === "number" ? saved.theme : 0,
     sound:    saved.sound === true,
     nextAt:   typeof saved.nextAt === "number" ? saved.nextAt : 0,
-    // When the text last changed here. Drives last-write-wins across machines.
-    updatedAt: typeof saved.updatedAt === "number" ? saved.updatedAt : 0
+    sideSize: typeof saved.sideSize === "number" ? saved.sideSize : 34,
+    sideOn:   saved.sideOn !== false,
+    // When each region last changed here. Drives last-write-wins across
+    // machines, tracked per region so one can't clobber the other.
+    updatedAt:     typeof saved.updatedAt === "number" ? saved.updatedAt : 0,
+    sideUpdatedAt: typeof saved.sideUpdatedAt === "number" ? saved.sideUpdatedAt : 0
   };
 
   // Clamp anything that came back malformed.
   state.size     = Math.min(380, Math.max(28, state.size));
+  state.sideSize = Math.min(120, Math.max(12, state.sideSize));
   state.everyIdx = Math.min(STEPS.length - 1, Math.max(0, state.everyIdx));
   state.theme    = Math.min(THEMES.length - 1, Math.max(0, state.theme));
 
@@ -537,14 +608,19 @@
 
   /* ============================ text ============================ */
   // plaintext-only keeps Enter from injecting markup; fall back where unsupported.
-  one.setAttribute("contenteditable", "plaintext-only");
-  if(one.contentEditable !== "plaintext-only"){
-    one.setAttribute("contenteditable", "true");
+  function makeEditable(el){
+    el.setAttribute("contenteditable", "plaintext-only");
+    if(el.contentEditable !== "plaintext-only") el.setAttribute("contenteditable", "true");
   }
-  one.textContent = typeof saved.text === "string" ? saved.text : "";
+  makeEditable(one);
+  makeEditable(side);
+
+  one.textContent  = typeof saved.text === "string" ? saved.text : "";
+  side.textContent = typeof saved.side === "string" ? saved.side : "";
 
   function syncEmpty(){
     one.classList.toggle("is-empty", one.innerText.trim() === "");
+    side.classList.toggle("is-empty", side.innerText.trim() === "");
   }
 
   var saveTimer = null;
@@ -566,22 +642,27 @@
 
   one.addEventListener("input", function(){
     state.updatedAt = Date.now();
-    syncEmpty();
-    queueSave();
-    pushSoon();
+    syncEmpty(); queueSave(); pushSoon();
+  });
+  side.addEventListener("input", function(){
+    state.sideUpdatedAt = Date.now();
+    syncEmpty(); queueSave(); pushSoon();
   });
 
   // Strip formatting from pasted text (only needed on the "true" fallback path).
-  one.addEventListener("paste", function(e){
-    if(one.contentEditable === "plaintext-only") return;
-    e.preventDefault();
-    var txt = (e.clipboardData || window.clipboardData).getData("text/plain");
-    document.execCommand("insertText", false, txt);
+  [one, side].forEach(function(el){
+    el.addEventListener("paste", function(e){
+      if(el.contentEditable === "plaintext-only") return;
+      e.preventDefault();
+      var txt = (e.clipboardData || window.clipboardData).getData("text/plain");
+      document.execCommand("insertText", false, txt);
+    });
   });
 
-  // Click anywhere off the text to drop focus, so the caret stops blinking.
+  // Click anywhere off a box to drop its focus, so the caret stops blinking.
   document.addEventListener("mousedown", function(e){
-    if(!one.contains(e.target)) one.blur();
+    if(!one.contains(e.target))  one.blur();
+    if(!side.contains(e.target)) side.blur();
   });
 
   /* ============================ appearance ============================ */
@@ -589,6 +670,17 @@
     document.documentElement.style.setProperty("--size", state.size + "px");
     sizeVal.textContent = state.size;
     sizeSlider.value = state.size;
+  }
+
+  function applySideSize(){
+    document.documentElement.style.setProperty("--side-size", state.sideSize + "px");
+    sideSizeVal.textContent = state.sideSize;
+    sideSizeSlider.value = state.sideSize;
+  }
+
+  function applySideOn(){
+    document.body.classList.toggle("no-side", !state.sideOn);
+    sideBtn.classList.toggle("on", state.sideOn);
   }
 
   function applyTheme(){
@@ -634,6 +726,16 @@
   sizeSlider.addEventListener("input", function(){
     state.size = parseInt(sizeSlider.value, 10);
     applySize(); queueSave();
+  });
+
+  sideSizeSlider.addEventListener("input", function(){
+    state.sideSize = parseInt(sideSizeSlider.value, 10);
+    applySideSize(); queueSave();
+  });
+
+  sideBtn.addEventListener("click", function(){
+    state.sideOn = !state.sideOn;
+    applySideOn(); save();
   });
 
   everySlider.addEventListener("input", function(){
@@ -689,7 +791,7 @@
   var syncStatus = "off";       // off | busy | ok | error
   var pullTimer = null;
   var pushTimer = null;
-  var pendingRemote = null;     // a newer remote note held back while typing
+  var pending = { main: null, side: null };  // remote updates held back while typing
 
   var syncBtn     = document.getElementById("syncBtn");
   var syncPanel   = document.getElementById("syncPanel");
@@ -729,30 +831,47 @@
     });
   }
 
+  // The two regions carry independent timestamps and resolve independently, so
+  // editing the sidebar on one Mac can never clobber a newer main note on another.
+  var REGIONS = {
+    main: { el: one,  ts: "updatedAt",     bodyKey: "body",      tsKey: "updated_at"      },
+    side: { el: side, ts: "sideUpdatedAt", bodyKey: "side_body", tsKey: "side_updated_at" }
+  };
+
   // Take the remote copy when it is genuinely newer — but never yank text out
-  // from under a caret; hold it until the box is no longer focused.
-  function adopt(row, force){
-    var t = Date.parse(row.updated_at);
-    if(!force && !(t > state.updatedAt)) return;
-    if(row.body === one.innerText){ state.updatedAt = Math.max(state.updatedAt, t); save(); return; }
-    if(document.activeElement === one){ pendingRemote = row; return; }
-    one.textContent = row.body;
-    state.updatedAt = t;
+  // from under a caret; hold it until that box is no longer focused.
+  function adoptRegion(name, row, force){
+    var r    = REGIONS[name];
+    var body = row[r.bodyKey];
+    var t    = Date.parse(row[r.tsKey]);
+    if(typeof body !== "string" || !t) return;
+    if(!force && !(t > state[r.ts])) return;
+    if(body === r.el.innerText){ state[r.ts] = Math.max(state[r.ts], t); save(); return; }
+    if(document.activeElement === r.el){ pending[name] = row; return; }
+    r.el.textContent = body;
+    state[r.ts] = t;
     syncEmpty();
     save();
     flashToast("Synced");
   }
 
-  // Deferred to a task: inside the blur event Chrome still reports #one as
+  function adopt(row, force){
+    adoptRegion("main", row, force);
+    adoptRegion("side", row, force);
+  }
+
+  // Deferred to a task: inside the blur event Chrome still reports the box as
   // document.activeElement, so adopting here would just re-defer itself and the
   // held update would never land.
-  one.addEventListener("blur", function(){
-    setTimeout(function(){
-      if(!pendingRemote) return;
-      var r = pendingRemote;
-      pendingRemote = null;
-      adopt(r);
-    }, 0);
+  Object.keys(REGIONS).forEach(function(name){
+    REGIONS[name].el.addEventListener("blur", function(){
+      setTimeout(function(){
+        if(!pending[name]) return;
+        var row = pending[name];
+        pending[name] = null;
+        adoptRegion(name, row);
+      }, 0);
+    });
   });
 
   function pull(){
@@ -769,7 +888,9 @@
     return rpc("one_thing_put", {
       p_id: sync.id,
       p_body: one.innerText,
-      p_updated_at: new Date(state.updatedAt || Date.now()).toISOString()
+      p_updated_at: new Date(state.updatedAt || Date.now()).toISOString(),
+      p_side: side.innerText,
+      p_side_updated_at: new Date(state.sideUpdatedAt || Date.now()).toISOString()
     }).then(function(rows){
       // The server hands back whichever copy won, so a rejected stale write
       // still converges instead of silently diverging.
@@ -805,11 +926,13 @@
     // Joining a shared note: take what is already there rather than racing it.
     // Only if the note is empty do we seed it from this machine.
     rpc("one_thing_get", { p_id: sync.id }).then(function(rows){
-      if(rows && rows[0] && rows[0].body !== ""){
-        adopt(rows[0], true);
+      var row = rows && rows[0];
+      if(row && (row.body !== "" || row.side_body !== "")){
+        adopt(row, true);
         syncMsg.textContent = "Connected — pulled the shared note";
       }else{
-        state.updatedAt = state.updatedAt || Date.now();
+        state.updatedAt     = state.updatedAt     || Date.now();
+        state.sideUpdatedAt = state.sideUpdatedAt || Date.now();
         return push().then(function(){
           syncMsg.textContent = "Connected — this note is now the shared one";
         });
@@ -859,7 +982,7 @@
 
   document.getElementById("syncOff").addEventListener("click", function(){
     sync = null;
-    pendingRemote = null;
+    pending.main = pending.side = null;
     clearInterval(pullTimer);
     clearTimeout(pushTimer);
     try{ localStorage.removeItem(SYNC_KEY); }catch(e){}
@@ -902,14 +1025,17 @@
     ], opt));
 
     // The type darkens against the lit field: maximum legibility from across
-    // the room, and it reads as designed rather than as a glitch.
-    running.push(one.animate([
-      { color:restInk,  offset:0,   easing:EASE_IN  },
-      { color:flashInk, offset:.13 },
-      { color:flashInk, offset:.50, easing:EASE_OUT },
-      { color:restInk,  offset:.66 },
-      { color:restInk,  offset:1    }
-    ], opt));
+    // the room, and it reads as designed rather than as a glitch. Both regions
+    // invert together so the screen reads as one surface.
+    [one, side].forEach(function(el){
+      running.push(el.animate([
+        { color:restInk,  offset:0,   easing:EASE_IN  },
+        { color:flashInk, offset:.13 },
+        { color:flashInk, offset:.50, easing:EASE_OUT },
+        { color:restInk,  offset:.66 },
+        { color:restInk,  offset:1    }
+      ], opt));
+    });
 
     // Specular sweep across the whole screen, once per pulse.
     running.push(sheen.animate([
@@ -937,7 +1063,7 @@
       { opacity:0,  offset:1    }
     ], opt));
 
-    running.push(stage.animate([
+    running.push(surface.animate([
       { transform:"scale(1)",     offset:0,   easing:EASE_IN  },
       { transform:"scale(1.026)", offset:.17 },
       { transform:"scale(1.026)", offset:.44, easing:EASE_OUT },
@@ -1020,8 +1146,15 @@
   wake();
 
   document.addEventListener("keydown", function(e){
-    if(e.key === "Escape"){ one.blur(); return; }
-    if(document.activeElement === one) return;   // never steal keys while typing
+    var ae = document.activeElement;
+    if(e.key === "Escape"){
+      one.blur(); side.blur();
+      document.body.classList.remove("panel-open");
+      return;
+    }
+    // Never steal keys from anything being typed into — the two text boxes or
+    // the sync code field, where "f"/"t"/"s" would otherwise be swallowed.
+    if(ae && (ae.isContentEditable || ae.tagName === "INPUT" || ae.tagName === "TEXTAREA")) return;
     if(e.metaKey || e.ctrlKey || e.altKey) return;
     var k = e.key.toLowerCase();
     if(k === "f"){ e.preventDefault(); fsBtn.click(); }
@@ -1037,6 +1170,8 @@
   /* ============================ boot ============================ */
   applyTheme();
   applySize();
+  applySideSize();
+  applySideOn();
   applyEvery();
   applySound();
   syncEmpty();
@@ -1049,13 +1184,16 @@
   startSync();
   if(sync) pull();
 
-  if(!saved.text){
+  if(!saved.text && !saved.side){
     one.focus();               // nothing written yet — let them just start typing
   }else{
     // Chrome restores focus to a contenteditable across a reload, which leaves a
     // caret blinking on a screen nobody clicked into. Take it back, after the
     // browser has finished restoring.
-    var dropCaret = function(){ if(document.activeElement === one) one.blur(); };
+    var dropCaret = function(){
+      var ae = document.activeElement;
+      if(ae === one || ae === side) ae.blur();
+    };
     requestAnimationFrame(dropCaret);
     window.addEventListener("load", dropCaret);
   }

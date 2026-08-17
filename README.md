@@ -20,10 +20,19 @@ Either way:
 
 1. Click the text and type your one thing. It saves as you type, in whatever
    casing you type it.
-2. **Size** slider — scale the type to fill the screen.
+2. **Main size** / **Side size** sliders — scale each region independently.
 3. **Flash every** slider — 1 minute up to 12 hours.
 4. Pick a **style** (see below).
 5. **Full screen**, then park it on the second display.
+
+### The sidebar
+
+A second editable column down the left, 25% of the screen width, for everything
+else you want kept in view. Same face, same palette, same flash — just smaller,
+and top-aligned rather than centred, because it holds a running list rather than
+one statement. **Sidebar** toggles it off if you want the full width back.
+
+It has its own size and its own sync, tracked separately from the main note.
 
 Click anywhere off the text to drop focus, so the caret stops blinking. The
 control bar and the cursor fade out after ~3.5s of no input, leaving just the
@@ -69,8 +78,10 @@ key, and a random note id. **No credentials ship in this repo** — the publishe
 page is inert until someone pastes a code in, and you can point it at your own
 backend by minting your own.
 
-- Only the **text** syncs. Size, style and interval stay per-machine, because the
-  screens usually aren't the same.
+- Only the **text** syncs — both the main note and the sidebar. Sizes, style and
+  interval stay per-machine, because the screens usually aren't the same.
+- The two regions carry independent timestamps and resolve independently, so
+  editing the sidebar on one Mac can't clobber a newer main note on another.
 - Conflicts resolve last-write-wins on the server, and the loser gets the
   winning copy back, so machines converge instead of silently diverging.
 - A remote change that arrives while you're typing is held until you click away,
@@ -85,19 +96,25 @@ If you want to host your own, it's one schema and two functions:
 ```sql
 create schema onething;
 create table onething.notes (
-  id text primary key,
-  body text not null default '',
-  updated_at timestamptz not null default now(),
-  created_at timestamptz not null default now()
+  id              text primary key,
+  body            text not null default '',
+  updated_at      timestamptz not null default now(),
+  side_body       text not null default '',
+  side_updated_at timestamptz not null default now(),
+  created_at      timestamptz not null default now()
 );
 ```
 
 The table is in a schema the API does **not** expose, has no grants and no RLS
 policies, so it's unreachable directly even with a valid key. The only way in is
 two `security definer` functions (`public.one_thing_get` / `one_thing_put`) with
-`search_path` pinned to `''`, which validate the id length, cap the body at 4000
+`search_path` pinned to `''`, which validate the id length, cap each body at 4000
 chars, reject future timestamps, and can only ever touch that one table. Knowing
 the random note id is the entire credential.
+
+`one_thing_put` takes the sidebar fields as `default null`, meaning "leave the
+sidebar alone", so each region can be written on its own and a caller that only
+knows about the main note still works unchanged.
 
 A code is just:
 
